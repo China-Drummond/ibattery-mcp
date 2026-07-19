@@ -20,6 +20,10 @@ let package = Package(
             name: "ibattery-mcp",
             dependencies: ["IBatteryCore"]
         ),
+        .executableTarget(
+            name: "ibattery-ble-helper",
+            dependencies: ["IBatteryCore"]
+        ),
         .testTarget(
             name: "IBatteryCoreTests",
             dependencies: ["IBatteryCore"]

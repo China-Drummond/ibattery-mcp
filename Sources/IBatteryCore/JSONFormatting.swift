@@ -1,7 +1,7 @@
 // Sources/IBatteryCore/JSONFormatting.swift
 import Foundation
 
-let deviceJSONEncoder: JSONEncoder = {
+public let deviceJSONEncoder: JSONEncoder = {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     encoder.outputFormatting = [.sortedKeys]
@@ -16,3 +16,9 @@ func encodeDevicesAsText(_ devices: [DeviceBatteryInfo]) -> String {
     }
     return json
 }
+
+public let deviceJSONDecoder: JSONDecoder = {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return decoder
+}()
