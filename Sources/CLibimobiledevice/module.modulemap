@@ -1,0 +1,5 @@
+module CLibimobiledevice {
+    header "shim.h"
+    link "imobiledevice-1.0"
+    export *
+}

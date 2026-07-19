@@ -10,10 +10,16 @@ let package = Package(
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk.git", from: "0.12.1")
     ],
     targets: [
+        .systemLibrary(
+            name: "CLibimobiledevice",
+            pkgConfig: "libimobiledevice-1.0",
+            providers: [.brew(["libimobiledevice"])]
+        ),
         .target(
             name: "IBatteryCore",
             dependencies: [
-                .product(name: "MCP", package: "swift-sdk")
+                .product(name: "MCP", package: "swift-sdk"),
+                "CLibimobiledevice"
             ]
         ),
         .executableTarget(

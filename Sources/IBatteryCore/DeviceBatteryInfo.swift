@@ -5,6 +5,7 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
         case mac
         case bleGeneric
         case iosDevice
+        case watch
     }
 
     public let id: String
