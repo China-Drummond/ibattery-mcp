@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 public func parseDeviceIdList(_ output: String) -> [String] {
     output
@@ -28,7 +31,34 @@ public func parseDeviceNamePlist(_ data: Data) -> String? {
     return name
 }
 
-func runLibimobiledeviceTool(_ command: String, _ arguments: [String]) -> (stdout: Data, exitCode: Int32) {
+/// Default wall-clock budget for a single `runLibimobiledeviceTool` invocation.
+/// `idevice_id`/`ideviceinfo` normally return in well under a second; this
+/// leaves generous headroom for a slow-but-working call while still
+/// guaranteeing the watchdog below fires long before anyone would consider
+/// the MCP server "hung".
+let defaultLibimobiledeviceTimeoutSeconds: TimeInterval = 5.0
+
+/// Runs a libimobiledevice CLI tool (`idevice_id`, `ideviceinfo`, ...) and
+/// captures its stdout/exit code, with a wall-clock watchdog.
+///
+/// Without this watchdog, a stalled child process (untrusted-but-connected
+/// device, wedged `usbmuxd`, a WiFi-paired device dropping mid-call) would
+/// block `readDataToEndOfFile()`/`waitUntilExit()` forever, hanging the whole
+/// MCP process. That would violate the same "must never hang or crash
+/// regardless of external device/hardware flakiness" invariant that
+/// `BLEBatterySource`'s socket read-timeouts (`SO_RCVTIMEO`) already
+/// guarantee for the Bluetooth path — this brings the iOS-device path to the
+/// same standard: if the child hasn't exited within `timeoutSeconds`, it's
+/// terminated and treated as a failure (non-zero exit code) instead of
+/// hanging the caller indefinitely. A short grace period after `terminate()`
+/// escalates to `SIGKILL` in case the child ignores `SIGTERM`, so the
+/// guarantee holds even for a misbehaving binary, not just the well-behaved
+/// ones we expect in practice.
+func runLibimobiledeviceTool(
+    _ command: String,
+    _ arguments: [String],
+    timeoutSeconds: TimeInterval = defaultLibimobiledeviceTimeoutSeconds
+) -> (stdout: Data, exitCode: Int32) {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = [command] + arguments
@@ -42,13 +72,30 @@ func runLibimobiledeviceTool(_ command: String, _ arguments: [String]) -> (stdou
         return (Data(), -1)
     }
 
-    var stdoutData = Data()
+    let terminateWorkItem = DispatchWorkItem {
+        if process.isRunning {
+            process.terminate()
+        }
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds, execute: terminateWorkItem)
+
+    // Grace period in case the child ignores SIGTERM; escalate to SIGKILL so
+    // the watchdog's guarantee holds unconditionally.
+    let killWorkItem = DispatchWorkItem {
+        if process.isRunning {
+            kill(process.processIdentifier, SIGKILL)
+        }
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + timeoutSeconds + 2.0, execute: killWorkItem)
+
     let errDrainThread = Thread {
         _ = errPipe.fileHandleForReading.readDataToEndOfFile()
     }
     errDrainThread.start()
-    stdoutData = outPipe.fileHandleForReading.readDataToEndOfFile()
+    let stdoutData = outPipe.fileHandleForReading.readDataToEndOfFile()
     process.waitUntilExit()
+    terminateWorkItem.cancel()
+    killWorkItem.cancel()
     return (stdoutData, process.terminationStatus)
 }
 
@@ -57,6 +104,45 @@ public struct IDeviceStatus: Sendable, Equatable {
     /// Count of devices detected but not readable; a catch-all for any per-device fetch failure
     /// (untrusted pairing, malformed battery data, or device disconnected mid-enumeration).
     public let connectedButUnreadableCount: Int
+}
+
+/// Pure computation of the lightweight status `checkStatus()` reports, given
+/// just the exit code of a single `idevice_id -l` probe (which is all
+/// `checkStatus()` runs itself) plus whatever `connectedButUnreadableCount`
+/// was most recently observed by a real `fetchAll()`/`fetchAllBlocking()` run
+/// elsewhere in the process (0 if none has run yet). Separated out from
+/// `IDeviceBatterySource.checkStatus()` so this decision logic is unit
+/// testable without spawning a subprocess.
+func iDeviceStatus(fromToolsProbeExitCode exitCode: Int32, cachedUnreadableCount: Int) -> IDeviceStatus {
+    guard exitCode == 0 else {
+        return IDeviceStatus(toolsInstalled: false, connectedButUnreadableCount: 0)
+    }
+    return IDeviceStatus(toolsInstalled: true, connectedButUnreadableCount: cachedUnreadableCount)
+}
+
+/// Thread-safe holder for the `connectedButUnreadableCount` most recently
+/// computed by a real `IDeviceBatterySource.fetchAllBlocking()` run. Written
+/// by `fetchAllBlocking()` (the expensive, full enumeration) and read by the
+/// lightweight `checkStatus()`, so `checkStatus()` can report an accurate
+/// "connected but unreadable" count without re-running the expensive
+/// per-device `ideviceinfo` queries itself. Starts at 0 if `fetchAll()` has
+/// never run yet in this process.
+final class UnreadableCountCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue = 0
+
+    var value: Int {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return storedValue
+        }
+        set {
+            lock.lock()
+            defer { lock.unlock() }
+            storedValue = newValue
+        }
+    }
 }
 
 public func iDeviceStatusWarning(status: IDeviceStatus) -> String? {
@@ -71,6 +157,13 @@ public func iDeviceStatusWarning(status: IDeviceStatus) -> String? {
 }
 
 public struct IDeviceBatterySource: BatteryDataSource {
+    /// Populated by `fetchAllBlocking()` on every real enumeration; read back
+    /// by `checkStatus()` so it doesn't need to redo that work. Shared across
+    /// all `IDeviceBatterySource` instances (there's only ever conceptually
+    /// one iOS-device world to enumerate), matching the existing `static`
+    /// storage pattern already used for `fetchAllBlocking`/`fetchDeviceInfo`.
+    private static let unreadableCountCache = UnreadableCountCache()
+
     public init() {}
 
     public func fetchAll() async -> [DeviceBatteryInfo] {
@@ -81,8 +174,25 @@ public struct IDeviceBatterySource: BatteryDataSource {
         }
     }
 
+    /// Lightweight status check for the `_status`/not-found warning paths.
+    /// Unlike `fetchAll()`, this does NOT enumerate every connected device's
+    /// battery info — it only runs a single `idevice_id -l` call (through the
+    /// same watchdog-protected `runLibimobiledeviceTool`) to determine
+    /// whether the tools are installed and runnable on `$PATH`. The
+    /// "connected but unreadable" count comes from `unreadableCountCache`,
+    /// last populated by whichever real `fetchAll()`/`fetchAllBlocking()`
+    /// call most recently ran (by the same registry request, in the current
+    /// call sites) rather than being recomputed here.
+    ///
+    /// Kept synchronous (not `async`), same as `BLEBatterySource
+    /// .fetchBluetoothStatus()` — its one subprocess call is bounded by
+    /// `runLibimobiledeviceTool`'s watchdog timeout, so a bounded blocking
+    /// call directly inside the async `CallTool` handler is consistent with
+    /// how the existing Bluetooth-status check (bounded by its own socket
+    /// read timeout) is already called there.
     public static func checkStatus() -> IDeviceStatus {
-        fetchAllBlocking().status
+        let idResult = runLibimobiledeviceTool("idevice_id", ["-l"])
+        return iDeviceStatus(fromToolsProbeExitCode: idResult.exitCode, cachedUnreadableCount: unreadableCountCache.value)
     }
 
     private static func fetchAllBlocking() -> (devices: [DeviceBatteryInfo], status: IDeviceStatus) {
@@ -102,6 +212,7 @@ public struct IDeviceBatterySource: BatteryDataSource {
         }
 
         let unreadableCount = udids.count - devices.count
+        unreadableCountCache.value = unreadableCount
         return (devices, IDeviceStatus(toolsInstalled: true, connectedButUnreadableCount: unreadableCount))
     }
 

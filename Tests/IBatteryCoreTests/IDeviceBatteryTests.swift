@@ -101,4 +101,72 @@ final class IDeviceBatteryTests: XCTestCase {
         """
         XCTAssertNil(parseDeviceNamePlist(Data(xml.utf8)))
     }
+
+    // MARK: - iDeviceStatus(fromToolsProbeExitCode:cachedUnreadableCount:)
+
+    func testIDeviceStatus_probeSucceeds_reportsToolsInstalledAndCachedCount() {
+        let status = iDeviceStatus(fromToolsProbeExitCode: 0, cachedUnreadableCount: 3)
+        XCTAssertEqual(status, IDeviceStatus(toolsInstalled: true, connectedButUnreadableCount: 3))
+    }
+
+    func testIDeviceStatus_probeSucceeds_zeroCachedCount() {
+        let status = iDeviceStatus(fromToolsProbeExitCode: 0, cachedUnreadableCount: 0)
+        XCTAssertEqual(status, IDeviceStatus(toolsInstalled: true, connectedButUnreadableCount: 0))
+    }
+
+    func testIDeviceStatus_probeFails_reportsToolsNotInstalledRegardlessOfCachedCount() {
+        let status = iDeviceStatus(fromToolsProbeExitCode: -1, cachedUnreadableCount: 5)
+        XCTAssertEqual(status, IDeviceStatus(toolsInstalled: false, connectedButUnreadableCount: 0))
+    }
+
+    func testIDeviceStatus_probeNonZeroExitCode_reportsToolsNotInstalled() {
+        let status = iDeviceStatus(fromToolsProbeExitCode: 127, cachedUnreadableCount: 2)
+        XCTAssertEqual(status, IDeviceStatus(toolsInstalled: false, connectedButUnreadableCount: 0))
+    }
+
+    // MARK: - UnreadableCountCache
+
+    func testUnreadableCountCache_defaultsToZero() {
+        let cache = UnreadableCountCache()
+        XCTAssertEqual(cache.value, 0)
+    }
+
+    func testUnreadableCountCache_storesAndReturnsLastWrittenValue() {
+        let cache = UnreadableCountCache()
+        cache.value = 4
+        XCTAssertEqual(cache.value, 4)
+        cache.value = 0
+        XCTAssertEqual(cache.value, 0)
+    }
+
+    func testUnreadableCountCache_concurrentWritesDoNotCrash() {
+        let cache = UnreadableCountCache()
+        let group = DispatchGroup()
+        for i in 0..<100 {
+            group.enter()
+            DispatchQueue.global().async {
+                cache.value = i
+                group.leave()
+            }
+        }
+        group.wait()
+        // No crash / data race is the actual assertion; the final value is
+        // whichever write happened last, which is inherently nondeterministic.
+        XCTAssertTrue(cache.value >= 0)
+    }
+
+    // MARK: - runLibimobiledeviceTool watchdog
+
+    func testRunLibimobiledeviceTool_hangingProcess_returnsPromptlyOnTimeout() {
+        let start = Date()
+        let result = runLibimobiledeviceTool("sleep", ["10"], timeoutSeconds: 0.5)
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertNotEqual(result.exitCode, 0)
+        XCTAssertLessThan(elapsed, 5.0, "watchdog should terminate the hung process well before the full 10s sleep completes")
+    }
+
+    func testRunLibimobiledeviceTool_fastProcess_succeedsWithinTimeout() {
+        let result = runLibimobiledeviceTool("true", [], timeoutSeconds: 5.0)
+        XCTAssertEqual(result.exitCode, 0)
+    }
 }
