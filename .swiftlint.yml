@@ -1,0 +1,15 @@
+excluded:
+  - .build
+  - Sources/CLibimobiledevice
+  - docs
+
+disabled_rules:
+  - todo
+
+opt_in_rules:
+  - empty_count
+  - closure_spacing
+
+line_length:
+  warning: 160
+  error: 200

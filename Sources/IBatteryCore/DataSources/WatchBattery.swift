@@ -5,8 +5,8 @@ public func parseUDIDList(fromPairedDevicesPlist plist: plist_t?) -> [String] {
     guard let plist else { return [] }
     let count = plist_array_get_size(plist)
     var result: [String] = []
-    for i in 0..<count {
-        guard let item = plist_array_get_item(plist, i) else { continue }
+    for index in 0..<count {
+        guard let item = plist_array_get_item(plist, index) else { continue }
         var cstr: UnsafeMutablePointer<CChar>?
         plist_get_string_val(item, &cstr)
         if let cstr {

@@ -151,7 +151,8 @@ public func iDeviceStatusWarning(status: IDeviceStatus) -> String? {
     }
     guard status.connectedButUnreadableCount == 0 else {
         let plural = status.connectedButUnreadableCount == 1 ? "device" : "devices"
-        return "\(status.connectedButUnreadableCount) connected iOS \(plural) couldn't be read — make sure to trust this computer on the device (tap \"Trust\" when prompted after connecting)."
+        return "\(status.connectedButUnreadableCount) connected iOS \(plural) couldn't be read — make sure to trust this computer on the device "
+            + "(tap \"Trust\" when prompted after connecting)."
     }
     return nil
 }

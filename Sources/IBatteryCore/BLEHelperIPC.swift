@@ -22,8 +22,8 @@ public func makeUnixSocketAddress(path: String) -> sockaddr_un? {
 
     withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
         ptr.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: ptr.pointee)) { charPtr in
-            for (i, byte) in pathBytes.enumerated() {
-                charPtr[i] = CChar(bitPattern: byte)
+            for (index, byte) in pathBytes.enumerated() {
+                charPtr[index] = CChar(bitPattern: byte)
             }
             charPtr[pathBytes.count] = 0
         }

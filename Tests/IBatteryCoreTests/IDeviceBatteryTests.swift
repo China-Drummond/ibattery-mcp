@@ -142,10 +142,10 @@ final class IDeviceBatteryTests: XCTestCase {
     func testUnreadableCountCache_concurrentWritesDoNotCrash() {
         let cache = UnreadableCountCache()
         let group = DispatchGroup()
-        for i in 0..<100 {
+        for index in 0..<100 {
             group.enter()
             DispatchQueue.global().async {
-                cache.value = i
+                cache.value = index
                 group.leave()
             }
         }

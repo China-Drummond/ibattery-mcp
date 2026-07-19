@@ -76,7 +76,11 @@ DispatchQueue.global(qos: .userInitiated).async {
             continue
         }
 
-        let requestText = String(decoding: buffer[0..<bytesRead], as: UTF8.self)
+        // String(bytes:encoding:) (rather than the lossy String(decoding:as:))
+        // returns nil for malformed UTF-8; falling back to "" is equivalent
+        // in practice, since the only requestText value this loop treats
+        // specially is the exact string "status" (see below).
+        let requestText = (String(bytes: buffer[0..<bytesRead], encoding: .utf8) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
 
         // CBCentralManager must be created on the main thread/actor with

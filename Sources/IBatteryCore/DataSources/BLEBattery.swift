@@ -201,13 +201,16 @@ public final class BLEBluetoothStatusChecker: NSObject, CBCentralManagerDelegate
 ///   Bluetooth itself is turned off.
 public func bleHelperStatusWarning(status: BLEHelperBluetoothStatus?) -> String? {
     guard let status else {
-        return "ibattery-ble-helper isn't running, so nearby Bluetooth devices (other than this Mac's own battery) weren't checked. Launch it once (double-click the .app, or `open` it) — it stays running in the background afterward."
+        return "ibattery-ble-helper isn't running, so nearby Bluetooth devices (other than this Mac's own battery) weren't checked. "
+            + "Launch it once (double-click the .app, or `open` it) — it stays running in the background afterward."
     }
     guard status.authorized else {
-        return "ibattery-ble-helper is running but doesn't have Bluetooth permission, so nearby Bluetooth devices weren't checked. Grant access in System Settings > Privacy & Security > Bluetooth, then try again."
+        return "ibattery-ble-helper is running but doesn't have Bluetooth permission, so nearby Bluetooth devices weren't checked. "
+            + "Grant access in System Settings > Privacy & Security > Bluetooth, then try again."
     }
     guard status.poweredOn else {
-        return "ibattery-ble-helper is running and authorized, but Bluetooth is turned off, so nearby Bluetooth devices weren't checked. Turn Bluetooth on and try again."
+        return "ibattery-ble-helper is running and authorized, but Bluetooth is turned off, so nearby Bluetooth devices weren't checked. "
+            + "Turn Bluetooth on and try again."
     }
     return nil
 }
@@ -228,25 +231,25 @@ public struct BLEBatterySource: BatteryDataSource {
     }
 
     public static func canReachHelper() -> Bool {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
+        let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard socketFD >= 0 else { return false }
+        defer { close(socketFD) }
         guard var addr = makeUnixSocketAddress(path: bleHelperSocketPath) else { return false }
         let result = withUnsafePointer(to: &addr) { ptr -> Int32 in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                connect(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         return result == 0
     }
 
     private func fetchAllBlocking() -> [DeviceBatteryInfo] {
-        guard let fd = Self.connectToHelper(readTimeoutSeconds: readTimeoutSeconds) else {
+        guard let socketFD = Self.connectToHelper(readTimeoutSeconds: readTimeoutSeconds) else {
             // Helper not installed/running — not an error, just no BLE data this call.
             return []
         }
-        defer { close(fd) }
-        let responseData = Self.sendRequestAndReadResponse(fd: fd, request: "scan\n")
+        defer { close(socketFD) }
+        let responseData = Self.sendRequestAndReadResponse(socketFD: socketFD, request: "scan\n")
         return parseHelperResponse(responseData)
     }
 
@@ -255,9 +258,9 @@ public struct BLEBatterySource: BatteryDataSource {
     /// full scan. Returns `nil` if the helper can't be reached at all (not
     /// running) or if its response couldn't be decoded.
     public static func fetchBluetoothStatus(readTimeoutSeconds: Int = 6) -> BLEHelperBluetoothStatus? {
-        guard let fd = connectToHelper(readTimeoutSeconds: readTimeoutSeconds) else { return nil }
-        defer { close(fd) }
-        let responseData = sendRequestAndReadResponse(fd: fd, request: "status\n")
+        guard let socketFD = connectToHelper(readTimeoutSeconds: readTimeoutSeconds) else { return nil }
+        defer { close(socketFD) }
+        let responseData = sendRequestAndReadResponse(socketFD: socketFD, request: "status\n")
         return try? deviceJSONDecoder.decode(BLEHelperBluetoothStatus.self, from: responseData)
     }
 
@@ -266,11 +269,11 @@ public struct BLEBatterySource: BatteryDataSource {
     /// `fetchBluetoothStatus()` — both need the same timeout/SIGPIPE setup
     /// and the same connect-then-give-up-quietly behavior.
     private static func connectToHelper(readTimeoutSeconds: Int) -> Int32? {
-        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return nil }
+        let socketFD = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard socketFD >= 0 else { return nil }
 
         var readTimeout = timeval(tv_sec: readTimeoutSeconds, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &readTimeout, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(socketFD, SOL_SOCKET, SO_RCVTIMEO, &readTimeout, socklen_t(MemoryLayout<timeval>.size))
 
         // Without this, a write() to a socket whose peer has already closed
         // the connection (e.g. the helper app quit mid-request) raises
@@ -279,7 +282,7 @@ public struct BLEBatterySource: BatteryDataSource {
         // component exists to avoid. SO_NOSIGPIPE makes write() return
         // EPIPE as an ordinary error instead.
         var noSigPipe: Int32 = 1
-        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(socketFD, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
 
         // makeUnixSocketAddress returns an Optional (nil only if the path is
         // too long for sockaddr_un.sun_path); it must be unwrapped before we
@@ -289,30 +292,30 @@ public struct BLEBatterySource: BatteryDataSource {
         // mirrors the proven pattern already used server-side in
         // Sources/ibattery-ble-helper/main.swift.
         guard var addr = makeUnixSocketAddress(path: bleHelperSocketPath) else {
-            close(fd)
+            close(socketFD)
             return nil
         }
         let connectResult = withUnsafePointer(to: &addr) { ptr -> Int32 in
             ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
-                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+                connect(socketFD, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
         guard connectResult == 0 else {
-            close(fd)
+            close(socketFD)
             return nil
         }
-        return fd
+        return socketFD
     }
 
-    private static func sendRequestAndReadResponse(fd: Int32, request: String) -> Data {
+    private static func sendRequestAndReadResponse(socketFD: Int32, request: String) -> Data {
         request.withCString { cString in
-            _ = write(fd, cString, strlen(cString))
+            _ = write(socketFD, cString, strlen(cString))
         }
 
         var responseData = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
         while true {
-            let bytesRead = read(fd, &buffer, buffer.count)
+            let bytesRead = read(socketFD, &buffer, buffer.count)
             guard bytesRead > 0 else { break }
             responseData.append(contentsOf: buffer[0..<bytesRead])
         }

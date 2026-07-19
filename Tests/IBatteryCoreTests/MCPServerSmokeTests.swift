@@ -23,7 +23,8 @@ final class MCPServerSmokeTests: XCTestCase {
         try process.run()
         defer { process.terminate() }
 
-        let initRequest = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"test-client","version":"0.1"}}}"# + "\n"
+        let initRequest = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","#
+            + #""capabilities":{},"clientInfo":{"name":"test-client","version":"0.1"}}}"# + "\n"
         inPipe.fileHandleForWriting.write(initRequest.data(using: .utf8)!)
         Thread.sleep(forTimeInterval: 0.3)
 
