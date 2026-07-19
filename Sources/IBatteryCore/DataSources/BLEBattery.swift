@@ -1,6 +1,9 @@
 // Sources/IBatteryCore/DataSources/BLEBattery.swift
 import CoreBluetooth
 import Foundation
+#if canImport(Darwin)
+import Darwin
+#endif
 
 public let batteryServiceUUID = CBUUID(string: "180F")
 public let batteryLevelCharacteristicUUID = CBUUID(string: "2A19")
@@ -139,12 +142,66 @@ public final class BLEBatteryScanner: NSObject, CBCentralManagerDelegate, CBPeri
     }
 }
 
+public func parseHelperResponse(_ data: Data) -> [DeviceBatteryInfo] {
+    (try? deviceJSONDecoder.decode([DeviceBatteryInfo].self, from: data)) ?? []
+}
+
 public struct BLEBatterySource: BatteryDataSource {
-    let scanDuration: TimeInterval
-    public init(scanDuration: TimeInterval = 4.0) {
-        self.scanDuration = scanDuration
+    let connectTimeoutSeconds: Int
+    let readTimeoutSeconds: Int
+
+    public init(connectTimeoutSeconds: Int = 2, readTimeoutSeconds: Int = 6) {
+        self.connectTimeoutSeconds = connectTimeoutSeconds
+        self.readTimeoutSeconds = readTimeoutSeconds
     }
+
     public func fetchAll() async -> [DeviceBatteryInfo] {
-        await BLEBatteryScanner().scan(duration: scanDuration)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: self.fetchAllBlocking())
+            }
+        }
+    }
+
+    private func fetchAllBlocking() -> [DeviceBatteryInfo] {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return [] }
+        defer { close(fd) }
+
+        var readTimeout = timeval(tv_sec: readTimeoutSeconds, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &readTimeout, socklen_t(MemoryLayout<timeval>.size))
+
+        // makeUnixSocketAddress returns an Optional (nil only if the path is
+        // too long for sockaddr_un.sun_path); it must be unwrapped before we
+        // take its address, otherwise we'd be taking the address of the
+        // Optional wrapper rather than the sockaddr_un payload itself, which
+        // has no guaranteed memory layout compatible with `sockaddr`. This
+        // mirrors the proven pattern already used server-side in
+        // Sources/ibattery-ble-helper/main.swift.
+        guard var addr = makeUnixSocketAddress(path: bleHelperSocketPath) else { return [] }
+        let connectResult = withUnsafePointer(to: &addr) { ptr -> Int32 in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sockPtr in
+                connect(fd, sockPtr, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard connectResult == 0 else {
+            // Helper not installed/running — not an error, just no BLE data this call.
+            return []
+        }
+
+        let request = "scan\n"
+        request.withCString { cString in
+            _ = write(fd, cString, strlen(cString))
+        }
+
+        var responseData = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while true {
+            let bytesRead = read(fd, &buffer, buffer.count)
+            guard bytesRead > 0 else { break }
+            responseData.append(contentsOf: buffer[0..<bytesRead])
+        }
+
+        return parseHelperResponse(responseData)
     }
 }
