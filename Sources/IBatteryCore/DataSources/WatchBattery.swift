@@ -11,7 +11,7 @@ public func parseUDIDList(fromPairedDevicesPlist plist: plist_t?) -> [String] {
         plist_get_string_val(item, &cstr)
         if let cstr {
             result.append(String(cString: cstr))
-            free(cstr)
+            plist_mem_free(cstr)
         }
     }
     return result
@@ -36,7 +36,7 @@ public func parseWatchProductType(fromPlist plist: plist_t?) -> String? {
     var cstr: UnsafeMutablePointer<CChar>?
     plist_get_string_val(plist, &cstr)
     guard let cstr else { return nil }
-    defer { free(cstr) }
+    defer { plist_mem_free(cstr) }
     return String(cString: cstr)
 }
 
