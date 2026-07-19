@@ -5,9 +5,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-swift build --product ibattery-ble-helper
+swift build --disable-sandbox --product ibattery-ble-helper
 
-BIN_PATH="$(swift build --show-bin-path)/ibattery-ble-helper"
+BIN_PATH="$(swift build --disable-sandbox --show-bin-path)/ibattery-ble-helper"
 APP_DIR=".build/ibattery-ble-helper.app"
 
 rm -rf "$APP_DIR"
