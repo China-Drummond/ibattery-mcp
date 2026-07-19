@@ -2,7 +2,8 @@
 import IBatteryCore
 import MCP
 
-let server = await makeServer()
+let registry = DeviceRegistry(sources: [MacBatterySource(), BLEBatterySource()])
+let server = await makeServer(registry: registry)
 let transport = StdioTransport()
 try await server.start(transport: transport)
 await server.waitUntilCompleted()
