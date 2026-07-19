@@ -4,6 +4,7 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case mac
         case bleGeneric
+        case iosDevice
     }
 
     public let id: String
