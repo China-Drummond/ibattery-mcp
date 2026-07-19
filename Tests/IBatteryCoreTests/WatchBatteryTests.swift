@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 import CLibimobiledevice
 @testable import IBatteryCore
 
@@ -59,5 +60,44 @@ final class WatchBatteryTests: XCTestCase {
 
     func testParseWatchProductType_nilPlist_returnsNil() {
         XCTAssertNil(parseWatchProductType(fromPlist: nil))
+    }
+
+    // MARK: - SingleResumeGate
+
+    func testSingleResumeGate_firstCallReturnsTrue() {
+        let gate = SingleResumeGate()
+        XCTAssertTrue(gate.tryResume())
+    }
+
+    func testSingleResumeGate_subsequentCallsReturnFalse() {
+        let gate = SingleResumeGate()
+        XCTAssertTrue(gate.tryResume())
+        XCTAssertFalse(gate.tryResume())
+        XCTAssertFalse(gate.tryResume())
+    }
+
+    func testSingleResumeGate_concurrentTryResume_exactlyOneCallerWins() {
+        let gate = SingleResumeGate()
+        let winCountLock = NSLock()
+        var winCount = 0
+        let group = DispatchGroup()
+        for _ in 0..<200 {
+            group.enter()
+            DispatchQueue.global().async {
+                if gate.tryResume() {
+                    winCountLock.lock()
+                    winCount += 1
+                    winCountLock.unlock()
+                }
+                group.leave()
+            }
+        }
+        group.wait()
+        // The real-world race this guards is exactly two callers (the actual
+        // fetch finishing vs. the timeout firing), but hammering it with 200
+        // concurrent callers is a stronger stress test of the same mutual-
+        // exclusion property: no matter how many threads race, exactly one
+        // may ever win.
+        XCTAssertEqual(winCount, 1, "exactly one concurrent tryResume() call should return true")
     }
 }

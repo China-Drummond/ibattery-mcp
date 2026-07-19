@@ -40,13 +40,66 @@ public func parseWatchProductType(fromPlist plist: plist_t?) -> String? {
     return String(cString: cstr)
 }
 
+/// Ensures a `CheckedContinuation` racing multiple completion paths (here: the
+/// real blocking work vs. a timeout) is resumed at most once. `NSLock`-guarded
+/// single-purpose type, matching the existing `UnreadableCountCache` shape in
+/// `IDeviceBattery.swift`.
+final class SingleResumeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var alreadyResumed = false
+
+    /// Returns `true` the first time it's called (the caller should resume
+    /// the continuation); `false` on every subsequent call (the caller must
+    /// not resume — someone else already won the race).
+    func tryResume() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !alreadyResumed else { return false }
+        alreadyResumed = true
+        return true
+    }
+}
+
 public struct WatchBatterySource: BatteryDataSource {
+    /// Overall wall-clock deadline for a single `fetchAll()` call.
+    ///
+    /// Unlike `runLibimobiledeviceTool`'s subprocess watchdog (which can
+    /// safely `SIGKILL` a hung child), there's no safe way to cancel a live
+    /// `companion_proxy` C call mid-flight from another thread — freeing an
+    /// `idevice_t`/`companion_proxy_client_t` while a call using that handle
+    /// might still be in progress elsewhere is unsafe. So this bound doesn't
+    /// abort `fetchAllBlocking()`; it just stops the caller from waiting on
+    /// it. If the timeout wins the race (via `SingleResumeGate`), `fetchAll()`
+    /// returns an empty array and the abandoned background work either
+    /// finishes harmlessly on its own thread (its result is simply discarded)
+    /// or keeps blocking indefinitely on its own — either way nothing is
+    /// awaiting it anymore, so it can no longer hang the MCP tool call.
+    ///
+    /// 15s is chosen to comfortably cover the legitimate multi-device case:
+    /// `fetchAllBlocking()` loops over every connected iPhone, and each
+    /// iPhone can do up to ~4 `companion_proxy` round-trips per paired watch
+    /// (one device-registry fetch per iPhone, plus capacity/charging/product-
+    /// type per watch) — while still being a meaningful bound on a stalled
+    /// `usbmuxd`/SSL-handshake wait, which has no other guaranteed ceiling.
+    private static let overallTimeoutSeconds: TimeInterval = 15.0
+
     public init() {}
 
     public func fetchAll() async -> [DeviceBatteryInfo] {
         await withCheckedContinuation { continuation in
+            let resumeGate = SingleResumeGate()
+
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: Self.fetchAllBlocking())
+                let result = Self.fetchAllBlocking()
+                if resumeGate.tryResume() {
+                    continuation.resume(returning: result)
+                }
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + Self.overallTimeoutSeconds) {
+                if resumeGate.tryResume() {
+                    continuation.resume(returning: [])
+                }
             }
         }
     }
