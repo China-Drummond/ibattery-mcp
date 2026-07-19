@@ -1,0 +1,17 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print next steps
+        run: |
+          echo "Tag ${{ github.ref_name }} pushed."
+          echo "Next: update China-Drummond/homebrew-tap's Formula/ibattery-mcp.rb"
+          echo "with this tag's URL and sha256 (see Task 5, Step 3 of the plan"
+          echo "this workflow came from for the exact commands)."
