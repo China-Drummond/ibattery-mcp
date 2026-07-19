@@ -52,6 +52,10 @@ public func makeServer(registry: DeviceRegistry) async -> Server {
             if let warning = bleHelperStatusWarning(status: bluetoothStatus) {
                 content.append(.text(text: warning, annotations: nil, _meta: nil))
             }
+            let iDeviceStatus = IDeviceBatterySource.checkStatus()
+            if let warning = iDeviceStatusWarning(status: iDeviceStatus) {
+                content.append(.text(text: warning, annotations: nil, _meta: nil))
+            }
             return .init(content: content, isError: false)
 
         case "get_device_battery":
@@ -62,6 +66,10 @@ public func makeServer(registry: DeviceRegistry) async -> Server {
                 var message = "No device found matching '\(query)'"
                 let bluetoothStatus = BLEBatterySource.fetchBluetoothStatus()
                 if let warning = bleHelperStatusWarning(status: bluetoothStatus) {
+                    message += "\n\n\(warning)"
+                }
+                let iDeviceStatus = IDeviceBatterySource.checkStatus()
+                if let warning = iDeviceStatusWarning(status: iDeviceStatus) {
                     message += "\n\n\(warning)"
                 }
                 return .init(content: [.text(text: message, annotations: nil, _meta: nil)], isError: true)

@@ -2,7 +2,7 @@
 import IBatteryCore
 import MCP
 
-let registry = DeviceRegistry(sources: [MacBatterySource(), BLEBatterySource()])
+let registry = DeviceRegistry(sources: [MacBatterySource(), BLEBatterySource(), IDeviceBatterySource()])
 let server = await makeServer(registry: registry)
 let transport = StdioTransport()
 try await server.start(transport: transport)
