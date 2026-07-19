@@ -1,5 +1,9 @@
 # ibattery-mcp
 
+[![CI](https://github.com/China-Drummond/ibattery-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/China-Drummond/ibattery-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/China-Drummond/ibattery-mcp)](https://github.com/China-Drummond/ibattery-mcp/releases)
+
 An [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server that
 exposes battery and charging status for your Apple devices — this Mac, nearby
 Bluetooth accessories, your iPhone/iPad, and your Apple Watch — as tools an AI

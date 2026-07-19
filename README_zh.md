@@ -1,5 +1,9 @@
 # ibattery-mcp
 
+[![CI](https://github.com/China-Drummond/ibattery-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/China-Drummond/ibattery-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/China-Drummond/ibattery-mcp)](https://github.com/China-Drummond/ibattery-mcp/releases)
+
 一个 [MCP](https://modelcontextprotocol.io)（Model Context Protocol）服务器，
 把你的苹果设备——这台 Mac、附近的蓝牙外设、iPhone/iPad、Apple Watch——的电量和
 充电状态，暴露成 AI 助手（Claude Code、Claude Desktop、[Work Buddy](https://docs.work-buddy.ai/)
