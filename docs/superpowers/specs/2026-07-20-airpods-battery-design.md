@@ -170,6 +170,20 @@ the value is the info dictionary. Parsing logic:
   committed) is the durable record of why this approach was chosen over BLE
   advertisement parsing — no separate rationale doc needed.
 
+## 7a. Addendum: `lastUpdatedLocal` field (added after initial approval)
+
+`system_profiler` reports a cached battery level with no timestamp of its
+own — a value could be minutes or days old, and the JSON gave no way for a
+caller to know without separately knowing the user's timezone to interpret
+the existing UTC `lastUpdated` field. Per explicit follow-up request:
+`DeviceBatteryInfo` gains a `lastUpdatedLocal: String` field — an ISO8601
+timestamp of `lastUpdated` expressed in this machine's local UTC offset
+(`TimeZone.current`), always derived from `lastUpdated` and never trusted
+from decoded JSON. This applies to every device kind, not just AirPods,
+since `DeviceBatteryInfo` is shared. See the implementation plan for the
+exact `Codable` approach (needed to keep decoding old JSON payloads, e.g.
+the BLE-helper IPC fixture, working without the new key).
+
 ## 7. Out of scope (for this feature)
 
 - AirPods Max (single combined battery via `device_batteryLevelMain`,
