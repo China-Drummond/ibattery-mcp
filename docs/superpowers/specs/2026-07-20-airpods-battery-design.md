@@ -38,6 +38,14 @@ recorded in [`CLAUDE.md`](../../../CLAUDE.md): prefer an official tool over a
 reverse-engineered protocol when the official tool already exposes the same
 data with far less risk and complexity.
 
+> **Superseded (2026-07-20, later the same day):** this rejection was
+> partially reversed once it became clear `system_profiler` cannot provide
+> per-bud in-case status, charging state, or non-cached levels. Plaintext
+> advertisement parsing is now an approved *supplement* (with
+> `system_profiler` still the fallback) — see
+> [2026-07-20-ble-advertisement-design.md](./2026-07-20-ble-advertisement-design.md)
+> and the amended tiered principle in `CLAUDE.md`.
+
 ## 2. Architecture
 
 New `AirPodsBatterySource: BatteryDataSource`, in
