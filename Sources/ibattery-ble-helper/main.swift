@@ -19,6 +19,15 @@ setvbuf(stdout, nil, _IONBF, 0)
 // before any sockets are created/used below.
 signal(SIGPIPE, SIG_IGN)
 
+// Persistent advertisement monitor — starts its periodic passive scan as
+// soon as Bluetooth is powered on and keeps the AirPods/iOS-candidate cache
+// warm for "snapshot" requests. Created on the main thread; all of its
+// state lives on the main queue (see BLEAdvertisementMonitor).
+let advertisementMonitor = BLEAdvertisementMonitor()
+Task { @MainActor in
+    advertisementMonitor.start()
+}
+
 try? FileManager.default.createDirectory(
     atPath: bleHelperSocketDirectory,
     withIntermediateDirectories: true
@@ -93,6 +102,12 @@ DispatchQueue.global(qos: .userInitiated).async {
                 // BLEHelperBluetoothStatus for the wire shape.
                 let status = await BLEBluetoothStatusChecker().checkStatus()
                 responseData = (try? deviceJSONEncoder.encode(status)) ?? Data("{}".utf8)
+            } else if requestText == "snapshot" {
+                // Cached AirPods advertisement state + bounded GATT battery
+                // reads of remembered iOS-device candidates. See
+                // BLEAdvertisementMonitor.
+                let devices = await advertisementMonitor.snapshot()
+                responseData = (try? deviceJSONEncoder.encode(devices)) ?? Data("[]".utf8)
             } else {
                 // "scan" (or anything else, kept for backward compatibility)
                 // — unchanged full scan behavior.
