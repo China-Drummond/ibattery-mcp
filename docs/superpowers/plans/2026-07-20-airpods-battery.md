@@ -642,7 +642,7 @@ final class AirPodsBatteryTests: XCTestCase {
         {
           "SPBluetoothDataType": [
             {
-              "controller_properties": { "controller_address": "D0:11:E5:87:61:EB" }
+              "controller_properties": { "controller_address": "DE:AD:BE:EF:00:01" }
             }
           ]
         }
