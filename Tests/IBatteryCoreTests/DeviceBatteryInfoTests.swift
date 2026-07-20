@@ -40,7 +40,7 @@ final class DeviceBatteryInfoTests: XCTestCase {
         XCTAssertThrowsError(try deviceJSONDecoder.decode(DeviceBatteryInfo.self, from: Data(json.utf8)))
     }
 
-    func testEncode_includesLastUpdatedLocalKey() {
+    func testEncode_includesLastUpdatedLocalKey() throws {
         let info = DeviceBatteryInfo(
             id: "x",
             name: "X",
@@ -49,15 +49,15 @@ final class DeviceBatteryInfoTests: XCTestCase {
             isCharging: nil,
             lastUpdated: Date(timeIntervalSince1970: 1_700_000_000)
         )
-        let data = try! deviceJSONEncoder.encode(info)
-        let json = String(data: data, encoding: .utf8)!
+        let data = try deviceJSONEncoder.encode(info)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("\"lastUpdatedLocal\""))
     }
 
     func testEquatable_sameLastUpdated_producesEqualLastUpdatedLocal() {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
-        let a = DeviceBatteryInfo(id: "x", name: "X", kind: .mac, percentage: 50, isCharging: nil, lastUpdated: date)
-        let b = DeviceBatteryInfo(id: "x", name: "X", kind: .mac, percentage: 50, isCharging: nil, lastUpdated: date)
-        XCTAssertEqual(a, b)
+        let first = DeviceBatteryInfo(id: "x", name: "X", kind: .mac, percentage: 50, isCharging: nil, lastUpdated: date)
+        let second = DeviceBatteryInfo(id: "x", name: "X", kind: .mac, percentage: 50, isCharging: nil, lastUpdated: date)
+        XCTAssertEqual(first, second)
     }
 }

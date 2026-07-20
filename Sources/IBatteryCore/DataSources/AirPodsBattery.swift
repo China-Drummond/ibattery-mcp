@@ -11,6 +11,32 @@ private func parsedBatteryPercentage(_ raw: Any?) -> Int? {
     return Int(cleaned)
 }
 
+/// Component label ("Left"/"Right"/"Case") and the `system_profiler` JSON key
+/// that carries its battery percentage, in the order entries are emitted.
+private let airPodsComponents: [(label: String, batteryKey: String)] = [
+    (label: "Left", batteryKey: "device_batteryLevelLeft"),
+    (label: "Right", batteryKey: "device_batteryLevelRight"),
+    (label: "Case", batteryKey: "device_batteryLevelCase")
+]
+
+private func airPodsEntry(
+    component: (label: String, batteryKey: String),
+    info: [String: Any],
+    lowercasedAddress: String,
+    displayName: String,
+    fetchedAt: Date
+) -> DeviceBatteryInfo? {
+    guard let percentage = parsedBatteryPercentage(info[component.batteryKey]) else { return nil }
+    return DeviceBatteryInfo(
+        id: "\(lowercasedAddress)-\(component.label.lowercased())",
+        name: "\(displayName) (\(component.label))",
+        kind: .airpods,
+        percentage: percentage,
+        isCharging: nil,
+        lastUpdated: fetchedAt
+    )
+}
+
 /// Parses `system_profiler SPBluetoothDataType -json` output into up to
 /// three `DeviceBatteryInfo` entries (Left/Right/Case) per Apple-vendor
 /// device that reports any of `device_batteryLevelLeft`/`Right`/`Case`.
@@ -44,35 +70,16 @@ public func parseSystemProfilerBluetoothJSON(_ data: Data, fetchedAt: Date) -> [
 
         let lowercasedAddress = address.lowercased()
 
-        if let left = parsedBatteryPercentage(info["device_batteryLevelLeft"]) {
-            results.append(DeviceBatteryInfo(
-                id: "\(lowercasedAddress)-left",
-                name: "\(name) (Left)",
-                kind: .airpods,
-                percentage: left,
-                isCharging: nil,
-                lastUpdated: fetchedAt
-            ))
-        }
-        if let right = parsedBatteryPercentage(info["device_batteryLevelRight"]) {
-            results.append(DeviceBatteryInfo(
-                id: "\(lowercasedAddress)-right",
-                name: "\(name) (Right)",
-                kind: .airpods,
-                percentage: right,
-                isCharging: nil,
-                lastUpdated: fetchedAt
-            ))
-        }
-        if let caseLevel = parsedBatteryPercentage(info["device_batteryLevelCase"]) {
-            results.append(DeviceBatteryInfo(
-                id: "\(lowercasedAddress)-case",
-                name: "\(name) (Case)",
-                kind: .airpods,
-                percentage: caseLevel,
-                isCharging: nil,
-                lastUpdated: fetchedAt
-            ))
+        for component in airPodsComponents {
+            if let entry = airPodsEntry(
+                component: component,
+                info: info,
+                lowercasedAddress: lowercasedAddress,
+                displayName: name,
+                fetchedAt: fetchedAt
+            ) {
+                results.append(entry)
+            }
         }
     }
     return results
