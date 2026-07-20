@@ -25,6 +25,14 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
     /// JSON (see `init(from:)`) so it can never drift out of sync with it.
     public let lastUpdatedLocal: String
     public let stale: Bool
+    /// Whether this earbud is currently inside its charging case, when known
+    /// from a parsed BLE advertisement. Only ever set on `.airpods`
+    /// left/right-bud entries; `nil` means unknown (never guessed — see the
+    /// design doc's confidence rules).
+    public let inCase: Bool?
+    /// Whether the AirPods case lid was open in the most recent advertisement
+    /// seen. Only ever set on `.airpods` case entries; `nil` means unknown.
+    public let lidOpen: Bool?
 
     public init(
         id: String,
@@ -33,7 +41,9 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
         percentage: Int,
         isCharging: Bool?,
         lastUpdated: Date,
-        stale: Bool = false
+        stale: Bool = false,
+        inCase: Bool? = nil,
+        lidOpen: Bool? = nil
     ) {
         self.id = id
         self.name = name
@@ -43,10 +53,12 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
         self.lastUpdated = lastUpdated
         self.lastUpdatedLocal = Self.formatLocal(lastUpdated)
         self.stale = stale
+        self.inCase = inCase
+        self.lidOpen = lidOpen
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, kind, percentage, isCharging, lastUpdated, lastUpdatedLocal, stale
+        case id, name, kind, percentage, isCharging, lastUpdated, lastUpdatedLocal, stale, inCase, lidOpen
     }
 
     public init(from decoder: Decoder) throws {
@@ -58,6 +70,8 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
         isCharging = try container.decodeIfPresent(Bool.self, forKey: .isCharging)
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
         stale = try container.decode(Bool.self, forKey: .stale)
+        inCase = try container.decodeIfPresent(Bool.self, forKey: .inCase)
+        lidOpen = try container.decodeIfPresent(Bool.self, forKey: .lidOpen)
         lastUpdatedLocal = Self.formatLocal(lastUpdated)
     }
 
@@ -71,6 +85,8 @@ public struct DeviceBatteryInfo: Codable, Equatable, Sendable {
         try container.encode(lastUpdated, forKey: .lastUpdated)
         try container.encode(lastUpdatedLocal, forKey: .lastUpdatedLocal)
         try container.encode(stale, forKey: .stale)
+        try container.encodeIfPresent(inCase, forKey: .inCase)
+        try container.encodeIfPresent(lidOpen, forKey: .lidOpen)
     }
 
     private static let localTimestampFormatter: ISO8601DateFormatter = {

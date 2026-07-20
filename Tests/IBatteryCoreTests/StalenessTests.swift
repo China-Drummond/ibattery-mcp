@@ -40,4 +40,16 @@ final class StalenessTests: XCTestCase {
         let known = await registry.listKnownDevices()
         XCTAssertEqual(known.first?.stale, true)
     }
+
+    func testMarkStaleIfNeeded_preservesInCaseAndLidOpen() {
+        let old = Date(timeIntervalSince1970: 1_700_000_000)
+        let device = DeviceBatteryInfo(
+            id: "x", name: "X", kind: .airpods, percentage: 50,
+            isCharging: nil, lastUpdated: old, inCase: true, lidOpen: false
+        )
+        let marked = markStaleIfNeeded(device, now: old.addingTimeInterval(500))
+        XCTAssertTrue(marked.stale)
+        XCTAssertEqual(marked.inCase, true)
+        XCTAssertEqual(marked.lidOpen, false)
+    }
 }

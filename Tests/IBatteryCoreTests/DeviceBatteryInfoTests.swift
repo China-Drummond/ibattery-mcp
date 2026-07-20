@@ -60,4 +60,45 @@ final class DeviceBatteryInfoTests: XCTestCase {
         let second = DeviceBatteryInfo(id: "x", name: "X", kind: .mac, percentage: 50, isCharging: nil, lastUpdated: date)
         XCTAssertEqual(first, second)
     }
+
+    func testEncode_omitsInCaseAndLidOpenKeysWhenNil() throws {
+        let info = DeviceBatteryInfo(
+            id: "x", name: "X", kind: .airpods, percentage: 50,
+            isCharging: nil, lastUpdated: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let json = String(data: try deviceJSONEncoder.encode(info), encoding: .utf8) ?? ""
+        XCTAssertFalse(json.contains("inCase"))
+        XCTAssertFalse(json.contains("lidOpen"))
+    }
+
+    func testEncode_includesInCaseAndLidOpenWhenSet() throws {
+        let info = DeviceBatteryInfo(
+            id: "x", name: "X", kind: .airpods, percentage: 50,
+            isCharging: true, lastUpdated: Date(timeIntervalSince1970: 1_700_000_000),
+            inCase: true, lidOpen: false
+        )
+        let json = String(data: try deviceJSONEncoder.encode(info), encoding: .utf8) ?? ""
+        XCTAssertTrue(json.contains("\"inCase\":true"))
+        XCTAssertTrue(json.contains("\"lidOpen\":false"))
+    }
+
+    func testDecode_legacyJSONWithoutInCaseKeys_decodesWithNil() throws {
+        let json = """
+        {"id":"abc","name":"Pods (Left)","kind":"airpods","percentage":72,"isCharging":null,"lastUpdated":"2026-07-19T08:00:00Z","stale":false}
+        """
+        let decoded = try deviceJSONDecoder.decode(DeviceBatteryInfo.self, from: Data(json.utf8))
+        XCTAssertNil(decoded.inCase)
+        XCTAssertNil(decoded.lidOpen)
+    }
+
+    func testCodableRoundTrip_preservesInCaseAndLidOpen() throws {
+        let info = DeviceBatteryInfo(
+            id: "x", name: "X", kind: .airpods, percentage: 50,
+            isCharging: false, lastUpdated: Date(timeIntervalSince1970: 1_700_000_000),
+            inCase: false, lidOpen: true
+        )
+        let decoded = try deviceJSONDecoder.decode(DeviceBatteryInfo.self, from: deviceJSONEncoder.encode(info))
+        XCTAssertEqual(decoded.inCase, false)
+        XCTAssertEqual(decoded.lidOpen, true)
+    }
 }

@@ -15,7 +15,9 @@ public func markStaleIfNeeded(_ device: DeviceBatteryInfo, now: Date, threshold:
         percentage: device.percentage,
         isCharging: device.isCharging,
         lastUpdated: device.lastUpdated,
-        stale: true
+        stale: true,
+        inCase: device.inCase,
+        lidOpen: device.lidOpen
     )
 }
 
