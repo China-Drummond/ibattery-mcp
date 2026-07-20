@@ -264,6 +264,17 @@ public struct BLEBatterySource: BatteryDataSource {
         return try? deviceJSONDecoder.decode(BLEHelperBluetoothStatus.self, from: responseData)
     }
 
+    /// Fetches the helper's advertisement snapshot: cached AirPods state
+    /// plus GATT battery reads of nearby iOS devices. The default timeout
+    /// covers the helper's 10s GATT ceiling with headroom. Returns [] when
+    /// the helper is unreachable — callers degrade to the official paths.
+    public static func fetchSnapshot(readTimeoutSeconds: Int = 15) -> [DeviceBatteryInfo] {
+        guard let socketFD = connectToHelper(readTimeoutSeconds: readTimeoutSeconds) else { return [] }
+        defer { close(socketFD) }
+        let responseData = sendRequestAndReadResponse(socketFD: socketFD, request: "snapshot\n")
+        return parseHelperResponse(responseData)
+    }
+
     /// Opens a connected, ready-to-use socket to the helper, or `nil` if it
     /// isn't reachable. Shared by `fetchAllBlocking()` and
     /// `fetchBluetoothStatus()` — both need the same timeout/SIGPIPE setup
@@ -320,5 +331,20 @@ public struct BLEBatterySource: BatteryDataSource {
             responseData.append(contentsOf: buffer[0..<bytesRead])
         }
         return responseData
+    }
+}
+
+/// Registry source for the helper's advertisement snapshot. Emits raw
+/// snapshot entries (ids prefixed "ble-"); DeviceRegistry's
+/// mergeBLESnapshot pass reconciles them with the official sources.
+public struct BLESnapshotSource: BatteryDataSource {
+    public init() {}
+
+    public func fetchAll() async -> [DeviceBatteryInfo] {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: BLEBatterySource.fetchSnapshot())
+            }
+        }
     }
 }

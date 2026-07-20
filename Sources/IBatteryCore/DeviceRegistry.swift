@@ -34,10 +34,11 @@ public actor DeviceRegistry {
         for source in sources {
             results.append(contentsOf: await source.fetchAll())
         }
-        for device in results {
+        let merged = mergeBLESnapshot(results, now: Date())
+        for device in merged {
             cache[device.id] = device
         }
-        return results
+        return merged
     }
 
     public func getDeviceBattery(query: String) async -> DeviceBatteryInfo? {

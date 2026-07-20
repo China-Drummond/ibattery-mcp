@@ -19,7 +19,14 @@ if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--help" || Comm
     exit(0)
 }
 
-let registry = DeviceRegistry(sources: [MacBatterySource(), BLEBatterySource(), IDeviceBatterySource(), WatchBatterySource(), AirPodsBatterySource()])
+let registry = DeviceRegistry(sources: [
+    MacBatterySource(),
+    BLEBatterySource(),
+    IDeviceBatterySource(),
+    WatchBatterySource(),
+    AirPodsBatterySource(),
+    BLESnapshotSource()
+])
 let server = await makeServer(registry: registry)
 let transport = StdioTransport()
 try await server.start(transport: transport)
