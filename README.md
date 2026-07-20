@@ -20,7 +20,7 @@ or any other MCP client) can call.
 | Generic Bluetooth devices (standard Battery Service — most Bluetooth mice/keyboards) | ⚠️ Implemented, unit-tested — real BLE scanning works, but no compatible peripheral confirmed yet |
 | iPhone / iPad | ✅ Verified against a real device |
 | Apple Watch (via a paired iPhone) | ✅ Verified against real hardware |
-| AirPods | 🚧 Not implemented yet (planned) |
+| AirPods | ⚠️ Implemented, unit-tested — not yet confirmed against real hardware |
 | Another Mac on the same network | 🚧 Not implemented yet (planned) |
 
 This project is pre-1.0 and under active development. See

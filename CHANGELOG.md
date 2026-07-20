@@ -21,6 +21,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   real device.**
 - Apple Watch battery via `libimobiledevice`'s `companion_proxy` API, reached
   through an already-connected iPhone. **Verified against real hardware.**
+- AirPods (and other Apple-vendor truly-wireless earbuds with a case)
+  battery via `system_profiler SPBluetoothDataType -json` — reports Left,
+  Right, and Case battery as separate entries; works even when the AirPods
+  are connected to a different device on the same iCloud account, not just
+  this Mac. **Implemented, unit-tested, not yet verified against real
+  hardware** — see the project README's Status section.
+- `lastUpdatedLocal`: every device entry's JSON now also includes an
+  ISO8601 timestamp in this Mac's local UTC offset, alongside the existing
+  UTC `lastUpdated`, so a caller doesn't need to separately know the user's
+  timezone to reason about how fresh a reading is.
 
 ### Fixed
 - Apple Watch battery reading failed against real hardware in two ways: (1)
@@ -32,8 +42,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so the capacity value was silently misread as 0. Both are fixed.
 
 ### Known limitations
-- AirPods (and Apple's proprietary Continuity BLE protocol generally) are not
-  yet supported — planned for a future release once independently verified
-  against real hardware.
 - Querying another Mac's devices over the local network (LAN multi-Mac) is not
   yet implemented.
