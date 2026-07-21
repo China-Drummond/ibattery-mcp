@@ -19,6 +19,7 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
     private var centralManager: CBCentralManager?
     private var cache = BLEAdvertisementCache()
     private var candidatePeripherals: [UUID: CBPeripheral] = [:]
+    private var candidateLastSeen: [UUID: Date] = [:]
     private var scanTimer: Timer?
 
     private let initialScanDuration: TimeInterval = 15
@@ -26,11 +27,20 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
     private let scanInterval: TimeInterval = 30
     private let perDeviceGATTTimeout: TimeInterval = 5
     private let totalGATTTimeout: TimeInterval = 10
+    // Candidates not re-seen in an advertisement within this window are
+    // evicted before each GATT snapshot. 600s (10 minutes) matches the
+    // MCP-side freshness window's notion of "nearby recently" — a candidate
+    // this stale wouldn't be reported as fresh even if the GATT read
+    // succeeded, so there's no point still connecting to it.
+    private let candidateTTL: TimeInterval = 600
 
     // In-flight GATT snapshot state (main queue only). One snapshot at a
     // time: a second concurrent request gets [] for the iOS portion rather
-    // than corrupting the first one's bookkeeping.
+    // than corrupting the first one's bookkeeping. gattGeneration guards
+    // against a completed snapshot's stray timers firing into the next
+    // snapshot's state.
     private var gattCompletion: (([DeviceBatteryInfo]) -> Void)?
+    private var gattGeneration = 0
     private var gattPending: Set<UUID> = []
     private var gattLevels: [UUID: Int] = [:]
     private var gattModels: [UUID: String] = [:]
@@ -80,6 +90,7 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
         // object, not just its identifier.
         if cache.iosCandidates[name] == peripheral.identifier {
             candidatePeripherals[peripheral.identifier] = peripheral
+            candidateLastSeen[peripheral.identifier] = Date()
         }
     }
 
@@ -98,6 +109,15 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
     // MARK: - GATT reads of iOS candidates (main queue only)
 
     private func startGATTReads(completion: @escaping ([DeviceBatteryInfo]) -> Void) {
+        let now = Date()
+        let staleIDs = candidatePeripherals.keys.filter { id in
+            guard let lastSeen = candidateLastSeen[id] else { return true }
+            return now.timeIntervalSince(lastSeen) > candidateTTL
+        }
+        for id in staleIDs {
+            candidatePeripherals.removeValue(forKey: id)
+            candidateLastSeen.removeValue(forKey: id)
+        }
         let peripherals = Array(candidatePeripherals.values)
         guard !peripherals.isEmpty,
               let central = centralManager, central.state == .poweredOn,
@@ -106,6 +126,8 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
             completion([])
             return
         }
+        gattGeneration += 1
+        let generation = gattGeneration
         gattCompletion = completion
         gattPending = Set(peripherals.map(\.identifier))
         gattLevels = [:]
@@ -117,26 +139,28 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
             central.connect(peripheral, options: nil)
             let id = peripheral.identifier
             DispatchQueue.main.asyncAfter(deadline: .now() + perDeviceGATTTimeout) { [weak self] in
-                self?.finishCandidate(id, cancel: peripheral)
+                self?.finishCandidate(id, generation: generation, cancel: peripheral)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + totalGATTTimeout) { [weak self] in
-            self?.finishAllCandidates()
+            self?.finishAllCandidates(generation: generation)
         }
     }
 
-    private func finishCandidate(_ id: UUID, cancel peripheral: CBPeripheral? = nil) {
+    private func finishCandidate(_ id: UUID, generation: Int, cancel peripheral: CBPeripheral? = nil) {
+        guard generation == gattGeneration else { return }
         guard gattPending.contains(id) else { return }
         gattPending.remove(id)
         if let peripheral {
             centralManager?.cancelPeripheralConnection(peripheral)
         }
         if gattPending.isEmpty {
-            finishAllCandidates()
+            finishAllCandidates(generation: generation)
         }
     }
 
-    private func finishAllCandidates() {
+    private func finishAllCandidates(generation: Int) {
+        guard generation == gattGeneration else { return }
         guard let completion = gattCompletion else { return }
         gattCompletion = nil
         gattPending = []
@@ -165,12 +189,12 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
     }
 
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        finishCandidate(peripheral.identifier)
+        finishCandidate(peripheral.identifier, generation: gattGeneration)
     }
 
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
         guard error == nil, let services = peripheral.services, !services.isEmpty else {
-            finishCandidate(peripheral.identifier, cancel: peripheral)
+            finishCandidate(peripheral.identifier, generation: gattGeneration, cancel: peripheral)
             return
         }
         for service in services {
@@ -200,7 +224,7 @@ public final class BLEAdvertisementMonitor: NSObject, CBCentralManagerDelegate, 
             gattModels[id] = String(data: data, encoding: .ascii) ?? ""
         }
         if gattLevels[id] != nil && gattModels[id] != nil {
-            finishCandidate(id, cancel: peripheral)
+            finishCandidate(id, generation: gattGeneration, cancel: peripheral)
         }
     }
 }
